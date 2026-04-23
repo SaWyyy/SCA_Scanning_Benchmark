@@ -1,0 +1,77 @@
+name: SCA & Container Comparison Pipeline (Trivy vs Snyk)
+
+on:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  compare_tools:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # ETAP 1: SKANOWANIE ZALEŻNOŚCI (SCA KODU)
+      # ==========================================
+
+      - name: Run Trivy SCA scan (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-sca-report.json'
+          exit-code: '0'
+
+      - name: Setup Snyk CLI
+        uses: snyk/actions/setup@master
+
+      - name: Run Snyk SCA scan
+        run: |
+          snyk auth ${{ secrets.SNYK_TOKEN }}
+          snyk test --json > snyk-sca-report.json || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # ==========================================
+      # ETAP 2: BUDOWA OBRAZU DOCKEROWEGO
+      # ==========================================
+
+      - name: Build Docker image for testing
+        run: docker build -t juiceshop-test:latest .
+
+      # ==========================================
+      # ETAP 3: SKANOWANIE OBRAZU KONTENERA
+      # ==========================================
+
+      - name: Run Trivy Image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'juiceshop-test:latest'
+          format: 'json'
+          output: 'trivy-image-report.json'
+          exit-code: '0'
+
+      - name: Run Snyk Container scan
+        run: |
+          # Flaga --app-vulns wymusza na Snyk skanowanie warstw aplikacyjnych w kontenerze
+          snyk container test juiceshop-test:latest --app-vulns --json > snyk-image-report.json || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # ==========================================
+      # ETAP 4: ARCHIWIZACJA DANYCH BADAWCZYCH
+      # ==========================================
+
+      - name: Upload Comparison Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-and-container-reports
+          path: |
+            trivy-sca-report.json
+            snyk-sca-report.json
+            trivy-image-report.json
+            snyk-image-report.json

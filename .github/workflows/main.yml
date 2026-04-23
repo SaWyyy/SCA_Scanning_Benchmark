@@ -16,7 +16,9 @@ jobs:
       # ==========================================
       # ETAP 1: SKANOWANIE ZALEŻNOŚCI (SCA KODU)
       # ==========================================
-
+      - name: Generate lockfile for Trivy
+        run: npm install --package-lock-only --ignore-scripts
+        
       - name: Run Trivy SCA scan (Filesystem)
         uses: aquasecurity/trivy-action@master
         with:
@@ -25,10 +27,14 @@ jobs:
           format: 'json'
           output: 'trivy-sca-report.json'
           exit-code: '0'
+          scanners: 'vuln'
 
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
-
+        
+      - name: Install Node dependencies
+        run: npm install --ignore-scripts
+        
       - name: Run Snyk SCA scan
         run: |
           snyk auth ${{ secrets.SNYK_TOKEN }}
